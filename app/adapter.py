@@ -16,7 +16,7 @@ from aria.ops.result import TestResult
 from aria.ops.timer import Timer
 
 from constants import (MEM_USED_KEY, TRANSPORT_NODE_KEY, CORE_COUNT_KEY, MBUF_POOL_MEM_KEY, HIGHEST_DATAPATH_USAGE_KEY,
-                       TRANSPORT_NODE_CPU_KEY, USAGE_KEY, CORE_TYPE_KEY, NATIVE_RESOURCE_KIND, NATIVE_ADAPTER_KIND)
+                       USAGE_KEY, CORE_TYPE_KEY, NATIVE_RESOURCE_KIND, NATIVE_ADAPTER_KIND)
 from constants import ADAPTER_KIND
 from constants import ADAPTER_NAME
 from nsxclient import NSXClient
@@ -68,11 +68,7 @@ def get_adapter_definition() -> AdapterDefinition:
         core = node.define_instanced_group("core", "Core", True)
         core.define_metric(USAGE_KEY, "Usage", Units.RATIO.PERCENT)
         core.define_string_property(CORE_TYPE_KEY, "Core type")
-
-        # Transport Node CPU resource
-        node_cpu = definition.define_object_type(TRANSPORT_NODE_CPU_KEY, "NSX Transport CPU")
-        node_cpu.define_metric(USAGE_KEY, "Usage")
-        node_cpu.define_string_property(CORE_TYPE_KEY, "Core Type")
+        
         logger.debug(f"Returning adapter definition: {definition.to_json()}")
         return definition
 
@@ -134,7 +130,7 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                         if parent_node:
                             set_parent(ops_client, current_node["identifier"], parent_node["identifier"])
                         else:
-                            raise Exception("Parent not found")
+                            logger.warning("Parent not found. No parent-child relationship created")
 
                     # Collect general node stats
                     node_stats = client.get_transport_node_status(node_id)
@@ -163,12 +159,6 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                         core_num = core_stats["core"]
                         node_result.add_metric(Metric(f"core|{core_num}|usage", core_stats["usage"]))
                         node_result.add_property(Property(f"core|{core_num}|core_type", core_stats["cpu_type"]))
-
-                        # Alternative method: Create child object
-                        node_cpu = result.object(ADAPTER_KIND, TRANSPORT_NODE_CPU_KEY, f"{node_name}:{core_num}")
-                        node_cpu.add_metric(Metric(USAGE_KEY, core_stats["usage"]))
-                        node_cpu.add_property(Property(CORE_TYPE_KEY, core_stats["cpu_type"]))
-                        node_result.add_child(node_cpu)
 
         except Exception as e:
             logger.error("Unexpected collection error")

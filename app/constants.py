@@ -10,7 +10,6 @@ HOST_KEY = "host"
 
 # Resource types
 TRANSPORT_NODE_KEY = "NSXTransportNode"
-TRANSPORT_NODE_CPU_KEY = "NSXTransportNodeCPU"
 
 # Metric and property keys
 MEM_USED_KEY = "mem_used"
