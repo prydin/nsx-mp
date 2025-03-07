@@ -60,15 +60,26 @@ def get_adapter_definition() -> AdapterDefinition:
 
         # Transport Node resource
         node = definition.define_object_type(TRANSPORT_NODE_KEY, "NSX Transport Node")
-        node.define_numeric_property(CORE_COUNT_KEY, "Core Count", is_discrete=True)
+
+        # Add the NSX object ID as an Ops object identifier to ensure uniquenes
         node.define_string_identifier("nsxId", "NSX ID", True)
+
+        # Add the properties
+        node.define_numeric_property(CORE_COUNT_KEY, "Core Count", is_discrete=True)
+
+        # Add the metrics
         node.define_metric(MEM_USED_KEY, "Memory Usage", Units.DATA_SIZE.KILOBYTE)
         node.define_metric(MBUF_POOL_MEM_KEY, MBUF_POOL_MEM_KEY, Units.DATA_SIZE.KILOBYTE)
         node.define_metric(HIGHEST_DATAPATH_USAGE_KEY, "Top Datapath Pool Usage", Units.DATA_SIZE.KILOBYTE)
+
+        # Core metrics are added under an instance group, allowing them to express
+        # metrics for each individual core. The metrics will be named e.g. "core|0|usage"
         core = node.define_instanced_group("core", "Core", True)
         core.define_metric(USAGE_KEY, "Usage", Units.RATIO.PERCENT)
+
+        # Define the core type as an instances property on the form "core|0|coreType"
         core.define_string_property(CORE_TYPE_KEY, "Core type")
-        
+
         logger.debug(f"Returning adapter definition: {definition.to_json()}")
         return definition
 
@@ -85,6 +96,7 @@ def test(adapter_instance: AdapterInstance) -> TestResult:
     with Timer(logger, "Test"):
         result = TestResult()
         try:
+            # Quick connectivity check: Connect and list the transport nodes.
             nsx = get_client(adapter_instance)
             nodes = nsx.get_transport_nodes()
             if not nodes:
@@ -98,6 +110,10 @@ def test(adapter_instance: AdapterInstance) -> TestResult:
             logger.debug(f"Returning test result: {result.get_json()}")
             return result
 
+"""
+Main data collection routine. Connects to NSX and builds a CollectionResult based on the 
+collected data.
+"""
 def collect(adapter_instance: AdapterInstance) -> CollectResult:
     with Timer(logger, "Collection"):
         result = CollectResult()
@@ -109,13 +125,19 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                     node_id = node["id"]
                     node_name = node["display_name"]
 
+                    # Add the custom transport node object to the native out-of-the-box
+                    # transport node. There's no way of doing this through the collection
+                    # result, so we have to manually look up the objects and form the relatiobship.
+                    # This means that the relationship won't be formed during the first collection
+                    # round, since the custom object won't exist at that time. This should
+                    # not be a big issue, since it only happens the very first time data is collected.
                     query = {
                         "name": [node_name],
                         "adapterKind": [ADAPTER_KIND],
                         "resourceKind": [TRANSPORT_NODE_KEY],
                     }
 
-                    # Custom resource already created
+                    # Custom resource already created?
                     current_node = lookup_resource(ops_client, query)
                     if current_node:
                         query = {
@@ -128,6 +150,7 @@ def collect(adapter_instance: AdapterInstance) -> CollectResult:
                         identifiers = [Identifier("ID", node_id)]
                         parent_node = lookup_resource(ops_client, query, identifiers)
                         if parent_node:
+                            # Form the parent-child relationship
                             set_parent(ops_client, current_node["identifier"], parent_node["identifier"])
                         else:
                             logger.warning("Parent not found. No parent-child relationship created")
